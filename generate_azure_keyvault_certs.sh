@@ -22,6 +22,9 @@ generate_rsa() {
     # Generate RSA private key
     openssl genrsa -out "rsa_keys/rsa_${key_size}_private.pem" $key_size
     
+    # Convert RSA private key to PKCS#8 format for Azure Key Vault compatibility
+    openssl pkcs8 -topk8 -nocrypt -in "rsa_keys/rsa_${key_size}_private.pem" -out "rsa_keys/rsa_${key_size}_private_pkcs8.pem"
+    
     # Extract public key
     openssl rsa -in "rsa_keys/rsa_${key_size}_private.pem" -pubout -out "rsa_keys/rsa_${key_size}_public.pem"
     
@@ -30,6 +33,9 @@ generate_rsa() {
         -out "rsa_certs/no_san/rsa_${key_size}_cert_no_san.pem" \
         -days 365 \
         -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=test-rsa-${key_size}.example.com"
+    
+    # Create combined PEM file with private key + certificate for Azure Key Vault (private key first)
+    cat "rsa_keys/rsa_${key_size}_private_pkcs8.pem" "rsa_certs/no_san/rsa_${key_size}_cert_no_san.pem" > "rsa_certs/no_san/rsa_${key_size}_cert_with_key_no_san.pem"
     
     # Create config file for certificate with SAN
     cat > "temp_san_config_rsa_${key_size}.conf" << EOF
@@ -65,6 +71,9 @@ EOF
         -config "temp_san_config_rsa_${key_size}.conf" \
         -extensions v3_req
     
+    # Create combined PEM file with private key + certificate for Azure Key Vault (private key first)
+    cat "rsa_keys/rsa_${key_size}_private_pkcs8.pem" "rsa_certs/with_san/rsa_${key_size}_cert_with_san.pem" > "rsa_certs/with_san/rsa_${key_size}_cert_with_key_with_san.pem"
+    
     # Generate PKCS#12 format (PFX)
     openssl pkcs12 -export -out "pfx_certs/rsa_${key_size}_cert.p12" \
         -inkey "rsa_keys/rsa_${key_size}_private.pem" \
@@ -92,6 +101,9 @@ generate_ec() {
     # Generate EC private key
     openssl ecparam -genkey -name $curve -out "ec_keys/ec_${curve_name}_private.pem"
     
+    # Convert EC private key to PKCS#8 format for Azure Key Vault compatibility
+    openssl pkcs8 -topk8 -nocrypt -in "ec_keys/ec_${curve_name}_private.pem" -out "ec_keys/ec_${curve_name}_private_pkcs8.pem"
+    
     # Extract public key
     openssl ec -in "ec_keys/ec_${curve_name}_private.pem" -pubout -out "ec_keys/ec_${curve_name}_public.pem"
     
@@ -100,6 +112,9 @@ generate_ec() {
         -out "ec_certs/no_san/ec_${curve_name}_cert_no_san.pem" \
         -days 365 \
         -subj "/C=US/ST=State/L=City/O=Organization/OU=Unit/CN=test-ec-${curve_name}.example.com"
+    
+    # Create combined PEM file with private key + certificate for Azure Key Vault (private key first)
+    cat "ec_keys/ec_${curve_name}_private_pkcs8.pem" "ec_certs/no_san/ec_${curve_name}_cert_no_san.pem" > "ec_certs/no_san/ec_${curve_name}_cert_with_key_no_san.pem"
     
     # Create config file for certificate with SAN
     cat > "temp_san_config_ec_${curve_name}.conf" << EOF
@@ -134,6 +149,9 @@ EOF
         -days 365 \
         -config "temp_san_config_ec_${curve_name}.conf" \
         -extensions v3_req
+    
+    # Create combined PEM file with private key + certificate for Azure Key Vault (private key first)
+    cat "ec_keys/ec_${curve_name}_private_pkcs8.pem" "ec_certs/with_san/ec_${curve_name}_cert_with_san.pem" > "ec_certs/with_san/ec_${curve_name}_cert_with_key_with_san.pem"
     
     # Generate PKCS#12 format (PFX)
     openssl pkcs12 -export -out "pfx_certs/ec_${curve_name}_cert.p12" \
@@ -196,11 +214,19 @@ echo "Generated files structure:"
 echo "├── rsa_keys/           - RSA private and public keys"
 echo "├── rsa_certs/"
 echo "│   ├── no_san/         - RSA certificates without SAN"
+echo "│   │   ├── *_cert_no_san.pem        - Certificate only"
+echo "│   │   └── *_cert_with_key_no_san.pem - Certificate + Private Key (for Azure Key Vault)"
 echo "│   └── with_san/       - RSA certificates with SAN"
+echo "│       ├── *_cert_with_san.pem      - Certificate only"
+echo "│       └── *_cert_with_key_with_san.pem - Certificate + Private Key (for Azure Key Vault)"
 echo "├── ec_keys/            - Elliptic Curve private and public keys"
 echo "├── ec_certs/"
 echo "│   ├── no_san/         - EC certificates without SAN"
+echo "│   │   ├── *_cert_no_san.pem        - Certificate only"
+echo "│   │   └── *_cert_with_key_no_san.pem - Certificate + Private Key (for Azure Key Vault)"
 echo "│   └── with_san/       - EC certificates with SAN"
+echo "│       ├── *_cert_with_san.pem      - Certificate only"
+echo "│       └── *_cert_with_key_with_san.pem - Certificate + Private Key (for Azure Key Vault)"
 echo "├── symmetric_keys/     - AES symmetric keys (hex and binary)"
 echo "└── pfx_certs/          - PKCS#12/PFX certificates (password: password123)"
 echo ""
@@ -210,8 +236,14 @@ echo "- Elliptic Curve: P-256, P-384, P-521"
 echo "- AES Symmetric: 128, 192, 256 bits"
 echo ""
 echo "Certificate Formats:"
-echo "- PEM format (.pem)"
+echo "- PEM format (.pem) - Certificate only"
+echo "- PEM format with key (*_with_key_*.pem) - Certificate + Private Key (for Azure Key Vault)"
 echo "- PKCS#12 format (.p12) - password protected"
 echo "- With and without Subject Alternative Names (SAN)"
+echo ""
+echo "Azure Key Vault Usage:"
+echo "- Use *_with_key_*.pem files for certificate import"
+echo "- Use .p12 files for PKCS#12 certificate import"
+echo "- Use individual .pem files for certificate-only operations"
 echo ""
 echo "All files are ready for Azure Key Vault upload and testing!"
